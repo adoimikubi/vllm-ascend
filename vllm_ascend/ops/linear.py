@@ -25,7 +25,8 @@ from typing import Optional, Union
 import torch
 import torch.nn as nn
 from torch.nn.parameter import Parameter
-from vllm.distributed import divide
+from vllm.distributed import (divide, get_tensor_model_parallel_rank,
+                              get_tensor_model_parallel_world_size)
 from vllm.model_executor.layers.linear import (  # noqa
     WEIGHT_LOADER_V2_SUPPORTED, ColumnParallelLinear, LinearBase,
     MergedColumnParallelLinear, QKVParallelLinear, QuantizeMethodBase,
@@ -172,9 +173,16 @@ class AscendMergedColumnParallelLinear(MergedColumnParallelLinear):
         *,
         return_bias: bool = True,
         disable_tp: bool = False,
+        is_share:bool = False,
     ):
+        self.is_share = is_share
         self.custom_op, self.tp_rank, self.tp_size = get_column_parallel_op(
             disable_tp, prefix, self)
+        self.tp_rank = get_tensor_model_parallel_rank()
+        self.tp_size = get_tensor_model_parallel_world_size()
+        # if is_share:
+            # print(f'tp_rank: {self.tp_rank}')
+            # print(f'tp_size: {self.tp_size}')
         # TODO(realliujiaxu): Replace the initialization code below with super().__init__ after linear of vllm supports custom comm group
         self.output_sizes = output_sizes
         assert all(output_size % self.tp_size == 0
@@ -221,9 +229,13 @@ class AscendRowParallelLinear(RowParallelLinear):
         *,
         return_bias: bool = True,
         disable_tp: bool = False,
+        is_share:bool = False,
     ):
+        self.is_share = is_share
         self.custom_op, self.tp_rank, self.tp_size = get_row_parallel_op(
             disable_tp, prefix, self)
+        self.tp_rank = get_tensor_model_parallel_rank()
+        self.tp_size = get_tensor_model_parallel_world_size()
         # TODO(realliujiaxu): Replace the initialization code below with super().__init__ after linear of vllm supports custom comm group
         # Divide the weight matrix along the first dimension.
         self.input_size_per_partition = divide(input_size, self.tp_size)
@@ -306,6 +318,8 @@ class AscendColumnParallelLinear(ColumnParallelLinear):
     ):
         self.custom_op, self.tp_rank, self.tp_size = get_column_parallel_op(
             disable_tp, prefix, self)
+        self.tp_rank = get_tensor_model_parallel_rank()
+        self.tp_size = get_tensor_model_parallel_world_size()
         # TODO(realliujiaxu): Replace the initialization code below with super().__init__ after linear of vllm supports custom comm group
         self.input_size_per_partition = input_size
         self.output_size_per_partition = divide(output_size, self.tp_size)

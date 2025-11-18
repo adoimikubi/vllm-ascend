@@ -103,7 +103,7 @@ class NPUFFNModelRunner(NPUModelRunner):
             #     return
             # self.is_m2n = False
             self.is_m2n = False
-            self.is_cam = True
+            self.is_cam = False
             if self.is_m2n:
                 # TODO metadata
                 m2n_afdconnector_data = M2NAFDConnectorMetadata()
@@ -131,7 +131,10 @@ class NPUFFNModelRunner(NPUModelRunner):
                 m2n_afdconnector_data=None
             logger.info("*"*50)
             logger.info(f"layer {current_layer_idx} moe recv hidden states type:{type(hidden_states)}, shape:{hidden_states.shape}")
-            print("execute_model", topk_weights.shape)
+            # print(f"recv hidden states\n")
+            # print(hidden_states)
+            
+            # print("execute_model", topk_weights.shape)
             num_tokens = hidden_states.shape[0]
 
             # Try to use CUDA graph if available
@@ -154,7 +157,7 @@ class NPUFFNModelRunner(NPUModelRunner):
                 # topk_weights = afdConnectorMetadata.topk_weights
                 # topk_ids = afdConnectorMetadata.m2n_afdconnector_data.topk_ids
                 # row_idx = afdConnectorMetadata.row_idx
-                print('execute_model', current_layer_idx)
+                # print('execute_model', current_layer_idx)
                 with set_ascend_forward_context(
                         attn_metadata=None,
                         vllm_config=self.vllm_config,
@@ -279,7 +282,7 @@ class NPUFFNModelRunner(NPUModelRunner):
                 topk_ids=topk_ids,
                 row_idx=row_idx)
         else:
-            print("_execute_eager_mode", topk_weights.shape)
+            # print("_execute_eager_mode", topk_weights.shape)
             rank_ffn_output = self.model.compute_ffn_output(
                  hidden_states = hidden_states,
                  layer_idx = current_layer_idx,

@@ -553,19 +553,19 @@ class AscendSharedFusedMoE(SharedFusedMoE, AscendFusedMoE):
         
         tp_size = get_tensor_model_parallel_world_size()
         tp_rank = get_tensor_model_parallel_rank()
-        print(f'topk_ids shape before split is {topk_ids.shape}')
+        # print(f'topk_ids shape before split is {topk_ids.shape}')
         
         shared_out = self._shared_experts(hidden_states)
 
         # NOTE: This is exactly the opposite of `maybe_all_reduce_tensor_model_parallel`
         moe_comm_type = forward_context.moe_comm_type
-        if moe_comm_type in {MoECommType.ALLTOALL, MoECommType.MC2}:
-            shared_out = tensor_model_parallel_all_reduce(shared_out)
+        # if moe_comm_type in {MoECommType.ALLTOALL, MoECommType.MC2}:
+        #     shared_out = tensor_model_parallel_all_reduce(shared_out)
             
         num_tokens, _ = hidden_states.shape
         target_pad_length = forward_context.padded_num_tokens
         pad_size = target_pad_length - num_tokens
-        print(f'pad_size is {pad_size}')
+        # print(f'pad_size is {pad_size}')
         # Pad if necessary (unless shared expert DP is enabled)
         if pad_size > 0:
             topk_weights = nn.functional.pad(topk_weights,
@@ -574,21 +574,22 @@ class AscendSharedFusedMoE(SharedFusedMoE, AscendFusedMoE):
                                                 (0, 0, 0, pad_size))
             row_idx = nn.functional.pad(row_idx,
                                                 (0, 0, 0, pad_size))
-        if tp_size > 1:
-            split_topk_weights = torch.tensor_split(topk_weights,
-                                                    tp_size,
-                                                    dim=0)
-            split_topk_ids = torch.tensor_split(topk_ids,
-                                                tp_size,
-                                                dim=0)
-            split_row_idx = torch.tensor_split(row_idx,
-                                                tp_size,
-                                                dim=0)
-            topk_weights = split_topk_weights[tp_rank]
-            topk_ids = split_topk_ids[tp_rank]
-            row_idx = split_row_idx[tp_rank]
+        
+        # if tp_size > 1:
+        #     split_topk_weights = torch.tensor_split(topk_weights,
+        #                                             tp_size,
+        #                                             dim=0)
+        #     split_topk_ids = torch.tensor_split(topk_ids,
+        #                                         tp_size,
+        #                                         dim=0)
+        #     split_row_idx = torch.tensor_split(row_idx,
+        #                                         tp_size,
+        #                                         dim=0)
+        #     topk_weights = split_topk_weights[tp_rank]
+        #     topk_ids = split_topk_ids[tp_rank]
+        #     row_idx = split_row_idx[tp_rank]
 
-        # print(f'topk_ids shape after split is {topk_ids.shape}')    
+        # print(f'hidden_states shape before prepare is {hidden_states.shape}')
         hidden_states, router_logits = forward_context.moe_comm_method.prepare(
             hidden_states=hidden_states,
             router_logits=router_logits,

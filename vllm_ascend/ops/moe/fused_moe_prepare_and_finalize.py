@@ -138,10 +138,11 @@ class FusedMoEPrepareAndFinalizeWithMC2(FusedMoEPrepareAndFinalize):
         self.enable_shared_expert_dp = enable_shared_expert_dp
         forward_context = get_forward_context()
         mc2_mask = forward_context.mc2_mask
-        if self.tp_size > 1:
-            # Also slice mc2_mask
-            split_mc2_mask = torch.tensor_split(mc2_mask, self.tp_size, dim=0)
-            mc2_mask = split_mc2_mask[self.tp_rank]
+
+        # if self.tp_size > 1:
+        #     # Also slice mc2_mask
+        #     split_mc2_mask = torch.tensor_split(mc2_mask, self.tp_size, dim=0)
+        #     mc2_mask = split_mc2_mask[self.tp_rank]
 
         if not self.replace_allreduce:
             self.num_tokens, _ = hidden_states.shape
@@ -163,8 +164,8 @@ class FusedMoEPrepareAndFinalizeWithMC2(FusedMoEPrepareAndFinalize):
                 split_router_logits = torch.tensor_split(router_logits,
                                                          self.tp_size,
                                                          dim=0)
-                hidden_states = split_hidden_states[self.tp_rank]
-                router_logits = split_router_logits[self.tp_rank]
+                # hidden_states = split_hidden_states[self.tp_rank]
+                # router_logits = split_router_logits[self.tp_rank]
                 self.split_hidden_states = split_hidden_states  # Save for finalize
 
         return hidden_states, router_logits, mc2_mask
@@ -179,17 +180,18 @@ class FusedMoEPrepareAndFinalizeWithMC2(FusedMoEPrepareAndFinalize):
 
         Skips communication and unpadding if `enable_shared_expert_dp` or `replace_allreduce` is True.
         """
-        if not (self.enable_shared_expert_dp or self.replace_allreduce):
-            if self.tp_size > 1:
-                # All-gather across TP group
-                dist.all_gather(list(self.split_hidden_states), hidden_states,
-                                self.moe_config.tp_group.device_group)
-                hidden_states = torch.cat(self.split_hidden_states, dim=0)
 
-                # TODO: It is a quick bugfix for the memory explosion issue in eager mode.
-                # If the cache is not cleared after `self.split_hidden_states` is created,
-                # it can lead to the memory explosion in eager mode.
-                del self.split_hidden_states
+        if not (self.enable_shared_expert_dp or self.replace_allreduce):
+        #     if self.tp_size > 1:
+        #         # All-gather across TP group
+        #         dist.all_gather(list(self.split_hidden_states), hidden_states,
+        #                         self.moe_config.tp_group.device_group)
+        #         hidden_states = torch.cat(self.split_hidden_states, dim=0)
+
+        #         # TODO: It is a quick bugfix for the memory explosion issue in eager mode.
+        #         # If the cache is not cleared after `self.split_hidden_states` is created,
+        #         # it can lead to the memory explosion in eager mode.
+        #         del self.split_hidden_states
 
             # Unpad if necessary
             if self.num_tokens < hidden_states.shape[0]:
