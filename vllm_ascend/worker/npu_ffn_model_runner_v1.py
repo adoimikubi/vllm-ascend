@@ -59,7 +59,7 @@ class NPUFFNModelRunner(NPUModelRunner):
             reversed(
                 self.vllm_config.compilation_config.cudagraph_capture_sizes))
         
-        self.is_m2n = self.afd_config.afd_connector == "m2nconnector"
+        self.is_m2n = True
 
         # Storage for captured graphs
         self._cuda_graphs: dict[tuple[int, int], torch.cuda.CUDAGraph] = {
@@ -99,25 +99,30 @@ class NPUFFNModelRunner(NPUModelRunner):
         current_layer_idx = self._get_current_layer_idx()
         try:
             # AFDConnectorMetadata
-            # if current_layer_idx < 1:
-            #     return
+            if current_layer_idx < 1:
+                return
             # self.is_m2n = False
-            self.is_m2n = False
-            self.is_cam = True
+            self.is_m2n = True
+            self.is_cam = False
             if self.is_m2n:
                 # TODO metadata
                 m2n_afdconnector_data = M2NAFDConnectorMetadata()
                 m2n_afdconnector_data.quant_mode = 0
                 m2n_afdconnector_data.expand_x_type = torch.bfloat16
                 m2n_afdconnector_data.moe_expert_num = 64
-                m2n_afdconnector_data.batch_size = 3200
+                m2n_afdconnector_data.batch_size = 320
                 m2n_afdconnector_data.h = 2048
                 m2n_afdconnector_data.k = 8
                 m2n_afdconnector_data.expert_token_nums_type = 0
                 m2n_afdconnector_data.aiv_num = 48
                 
                 hidden_states, dynamic_scales, group_list, handle, topk_weights,afdConnectorMetadata = self.connector.recv_attn_output(m2n_afdconnector_data)
+                # print(f'group_list: {group_list}')
                 print(f'recv_attn_output success ,layer id is {current_layer_idx}')
+                # token_num = group_list[-1]
+                # hidden_states_print = hidden_states[:token_num]
+                # print(f'hidden_states is {hidden_states_print}')
+                # print(f'group_list is {group_list}')
                 m2n_afdconnector_data.handle = handle
                 m2n_afdconnector_data.topk_weights = topk_weights
             elif self.is_cam:
@@ -131,7 +136,7 @@ class NPUFFNModelRunner(NPUModelRunner):
                 m2n_afdconnector_data=None
             logger.info("*"*50)
             logger.info(f"layer {current_layer_idx} moe recv hidden states type:{type(hidden_states)}, shape:{hidden_states.shape}")
-            print("execute_model", topk_weights.shape)
+            # print("execute_model", topk_weights.shape)
             num_tokens = hidden_states.shape[0]
 
             # Try to use CUDA graph if available
@@ -145,12 +150,12 @@ class NPUFFNModelRunner(NPUModelRunner):
                         hidden_states, cuda_graph_info)
             else:
                 # Fallback to eager mode
-                ffn_need_forward_data = afdConnectorMetadata.ffn_need_forward_data
-                with_prefill = ffn_need_forward_data.with_prefill
-                moe_comm_type = ffn_need_forward_data.moe_comm_type
-                num_input_tokens = ffn_need_forward_data.num_input_tokens
-                total_num_scheduled_tokens = ffn_need_forward_data.total_num_scheduled_tokens
-                current_layer_idx = afdConnectorMetadata.layer_idx
+                # ffn_need_forward_data = afdConnectorMetadata.ffn_need_forward_data
+                # with_prefill = ffn_need_forward_data.with_prefill
+                # moe_comm_type = ffn_need_forward_data.moe_comm_type
+                # num_input_tokens = ffn_need_forward_data.num_input_tokens
+                # total_num_scheduled_tokens = ffn_need_forward_data.total_num_scheduled_tokens
+                # current_layer_idx = afdConnectorMetadata.layer_idx
                 # topk_weights = afdConnectorMetadata.topk_weights
                 # topk_ids = afdConnectorMetadata.m2n_afdconnector_data.topk_ids
                 # row_idx = afdConnectorMetadata.row_idx
@@ -158,12 +163,12 @@ class NPUFFNModelRunner(NPUModelRunner):
                 with set_ascend_forward_context(
                         attn_metadata=None,
                         vllm_config=self.vllm_config,
-                        num_tokens=num_input_tokens,
-                        with_prefill=with_prefill,
+                        # num_tokens=num_input_tokens,
+                        # with_prefill=with_prefill,
                         reserved_mc2_mask=self.reserved_mc2_mask,
-                        moe_comm_type=moe_comm_type,
+                        # moe_comm_type=moe_comm_type,
                         prefetch_stream=self.prefetch_stream,
-                        num_actual_tokens=total_num_scheduled_tokens,
+                        # num_actual_tokens=total_num_scheduled_tokens,
                         model_instance=self.model):
                     if self.is_m2n:
                         # 未combine hidden
@@ -269,7 +274,7 @@ class NPUFFNModelRunner(NPUModelRunner):
                 dynamic_scales=dynamic_scales,
                 topk_weights=topk_weights, 
                 topk_ids=topk_ids)
-        if self.is_cam:
+        elif self.is_cam:
             rank_ffn_output = self.model.compute_ffn_output(
                 layer_idx=current_layer_idx, 
                 hidden_states=hidden_states,
