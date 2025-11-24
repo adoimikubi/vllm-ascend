@@ -567,13 +567,13 @@ class AscendSharedFusedMoE(SharedFusedMoE, AscendFusedMoE):
         pad_size = target_pad_length - num_tokens
         # print(f'pad_size is {pad_size}')
         # Pad if necessary (unless shared expert DP is enabled)
-        if pad_size > 0:
-            topk_weights = nn.functional.pad(topk_weights,
-                                                (0, 0, 0, pad_size))
-            topk_ids = nn.functional.pad(topk_ids,
-                                                (0, 0, 0, pad_size))
-            row_idx = nn.functional.pad(row_idx,
-                                                (0, 0, 0, pad_size))
+        # if pad_size > 0:
+        #     topk_weights = nn.functional.pad(topk_weights,
+        #                                         (0, 0, 0, pad_size))
+        #     topk_ids = nn.functional.pad(topk_ids,
+        #                                         (0, 0, 0, pad_size))
+        #     row_idx = nn.functional.pad(row_idx,
+        #                                         (0, 0, 0, pad_size))
         
         # if tp_size > 1:
         #     split_topk_weights = torch.tensor_split(topk_weights,
@@ -652,7 +652,7 @@ class AscendSharedFusedMoE(SharedFusedMoE, AscendFusedMoE):
         # "topk_scales": topk_scales,
         # expand_x, dynamic_scales, expert_token_nums, recv_counts, expand_scales
         # just for cam
-        group_list_type = 1
+        group_list_type = 0
         permuted_hidden_states, expert_tokens = hidden_states, group_list
         
         mlp_output = unified_apply_mlp(hidden_states=permuted_hidden_states,

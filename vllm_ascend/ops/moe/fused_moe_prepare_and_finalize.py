@@ -150,11 +150,11 @@ class FusedMoEPrepareAndFinalizeWithMC2(FusedMoEPrepareAndFinalize):
             pad_size = target_pad_length - self.num_tokens
 
             # Pad if necessary (unless shared expert DP is enabled)
-            if pad_size > 0 and not self.enable_shared_expert_dp:
-                hidden_states = nn.functional.pad(hidden_states,
-                                                  (0, 0, 0, pad_size))
-                router_logits = nn.functional.pad(router_logits,
-                                                  (0, 0, 0, pad_size))
+            # if pad_size > 0 and not self.enable_shared_expert_dp:
+            #     hidden_states = nn.functional.pad(hidden_states,
+            #                                       (0, 0, 0, pad_size))
+            #     router_logits = nn.functional.pad(router_logits,
+            #                                       (0, 0, 0, pad_size))
 
             # Slice across TP ranks
             if self.tp_size > 1 and not self.enable_shared_expert_dp:

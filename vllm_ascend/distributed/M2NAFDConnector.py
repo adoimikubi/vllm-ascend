@@ -71,32 +71,44 @@ class M2NAFDConnector(AFDConnectorBase):
         #ffn_ranks = [i for i in range(ffn_size, ffn_size + attn_size)]
         #attn_ranks = [i for i in range(attn_size)]
         world_rank = self.rank if role == "attention" else self.rank + self.attn_size
+        # p2p_rank = self.rank if role == "attention" else self.rank + self.ffn_size
         self.rank = world_rank
         logger.info(
             f"world_size = {self.ffn_size + self.attn_size}, world_rank = {world_rank}")
         # TODO : get backend to replace hardcode
         self.afd_pg = init_afd_process_group(
             backend="hccl",
-            init_method=f"tcp://127.0.0.1:11038",
+            init_method=f"tcp://127.0.0.1:11039",
             world_size=self.ffn_size + self.attn_size,
             rank=world_rank,
             group_name="afd"
         )
-        ffn_ranks = [i for i in range(self.ffn_size, self.ffn_size + self.attn_size)]
-        attn_ranks = [i for i in range(self.attn_size)]
+
+        # if self.rank < self.ffn_size or self.rank >= self.attn_size:
+
+        # p2p_pg = init_afd_process_group(
+        #     backend="hccl",
+        #     init_method=f"tcp://127.0.0.1:11040",
+        #     world_size=self.ffn_size * 2,
+        #     rank=p2p_rank,
+        #     group_name="p2p"
+        # )
+
+        # ffn_ranks = [i for i in range(self.ffn_size, self.ffn_size * 2)]
+        # attn_ranks = [i for i in range(self.ffn_size)]
 
         default_pg_switcher = DefaultProcessGroupSwitcher(
             _get_default_group(), self.afd_pg)
-        # TODO(yxj):m2n ae_group is different
         with default_pg_switcher:
-            sub_group_ranks = []
-            for i in range(len(ffn_ranks)):
-                ranks = list([attn_ranks[i], ffn_ranks[i]])
-                sub_group_ranks.append(ranks)
-            self.process_group = init_model_parallel_group(sub_group_ranks,
-                                                 world_rank,
-                                                 backend="hccl",
-                                                 group_name="ae")
+            # sub_group_ranks = []
+            # for i in range(len(ffn_ranks)):
+            #     ranks = list([attn_ranks[i], ffn_ranks[i]])
+            #     sub_group_ranks.append(ranks)
+            print(sub_group_ranks)
+            self.process_group = init_model_parallel_group([[0,1,2]],
+                                                world_rank,
+                                                backend="hccl",
+                                                group_name="ae")
 
         logger.info("m2n connector initialized")
 
@@ -117,11 +129,28 @@ class M2NAFDConnector(AFDConnectorBase):
                          topk_weights: torch.Tensor, 
                          topk_ids:torch.Tensor, 
                          metadata: AFDConnectorMetadata) -> Any:
-        # TODO():move to support aclgraph
-        dst = (self.process_group.rank_in_group + 1) % self.process_group.world_size
-        print(f'send_attn_output dst is {dst}')
-        self.process_group.send_object(metadata,dst)
-        print(f'send_attn_output metadata success')
+
+        # print('send hidden_states!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(hidden_states)
+        # print('send topk_weights!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(topk_weights)
+        # print('send topk_ids!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(topk_ids)
+        # print('send world_size!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(self.attn_size + self.ffn_size)
+        # print('send moe_world_size!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(self.ffn_size)
+        # print('send ep_rank_id!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(self.rank)
+        # print('send moe_expert_num!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(metadata.m2n_afdconnector_data.moe_expert_num)
+        
+        if self.rank < self.ffn_size:
+            # TODO():move to support aclgraph
+            dst = (self.process_group.rank_in_group + 1) % self.process_group.world_size
+            print(f'send_attn_output dst is {dst}')
+            self.process_group.send_object(metadata,dst)
+            print(f'send_attn_output metadata success')
         dynamic_scales = metadata.m2n_afdconnector_data.scale
         # moe_expert_num
         moe_expert_num = metadata.m2n_afdconnector_data.moe_expert_num
@@ -140,7 +169,7 @@ class M2NAFDConnector(AFDConnectorBase):
                                                         moe_expert_num=moe_expert_num,
                                                         quant_mode=quant_mode,
                                                         aiv_num=aiv_num,
-                                                        server_rank_size = 2,
+                                                        server_rank_size = 1,
                                                         dynamic_scales=dynamic_scales)
         
         
@@ -153,6 +182,19 @@ class M2NAFDConnector(AFDConnectorBase):
         handle = metadata.m2n_afdconnector_data.handle
         moe_expert_num = metadata.m2n_afdconnector_data.moe_expert_num
         aiv_num = metadata.m2n_afdconnector_data.aiv_num
+
+        # print("recv_ffn output handle")
+        # print(handle)
+        # print("recv_ffn output world_size")
+        # print(self.attn_size + self.ffn_size)
+        # print("recv_ffn output moe_world_size")
+        # print(self.ffn_size)
+        # print("recv_ffn output rank")
+        # print(self.rank)
+        # print("recv_ffn output moe_expert_num")
+        # print(moe_expert_num)
+        # print("recv_ffn output aiv_num")
+        # print(aiv_num)
         
         xOut = torch_npu.npu_n2m_distribute_recv(x=hidden_states,
                                                 ep_recv_counts=handle,
@@ -161,8 +203,10 @@ class M2NAFDConnector(AFDConnectorBase):
                                                 moe_world_size=self.ffn_size,
                                                 ep_rank_id=self.rank,
                                                 moe_expert_num=moe_expert_num,
-                                                server_rank_size = 2,
+                                                server_rank_size = 1,
                                                 aiv_num=aiv_num)
+        # print("recv_ffn output xOut")
+        # print(xOut)
         return xOut
     
     # MOE发给ATTN(MOE发送) 
@@ -175,6 +219,27 @@ class M2NAFDConnector(AFDConnectorBase):
         k = metadata.k
         handle = metadata.handle
         
+        # print("send ffn output handle")
+        # print(handle)
+        # print("send ffn output topk_weights")
+        # print(topk_weights)
+        # print("send ffn output world_size")
+        # print(self.attn_size + self.ffn_size)
+        # print("send ffn output moe_world_size")
+        # print(self.ffn_size)
+        # print("send ffn output rank")
+        # print(self.rank)
+        # print("send ffn output moe_expert_num")
+        # print(moe_expert_num)
+        # print("send ffn output k")
+        # print(k)
+        # print("send ffn output aiv_num")
+        # print(aiv_num)
+        # print("send ffn output batch_size")
+        # print(batch_size)
+        # print("send ffn output ffn_output")
+        # print(ffn_output)
+
         torch_npu.npu_n2m_distribute_send(expandX=ffn_output,
                                         ep_send_counts=handle,
                                         expert_scales=topk_weights,
@@ -185,7 +250,7 @@ class M2NAFDConnector(AFDConnectorBase):
                                         moe_expert_num=moe_expert_num,# config
                                         batch_size=batch_size,# config
                                         k=k,# config
-                                        server_rank_size = 2,
+                                        server_rank_size = 1,
                                         aiv_num=aiv_num)# config 未分核48 
         print(f'send_ffn_output success')
         return
@@ -209,6 +274,7 @@ class M2NAFDConnector(AFDConnectorBase):
         k = metadata.k
         h = metadata.h
         expert_token_nums_type = metadata.expert_token_nums_type
+
         #npu::npu_m2n_distribute_recv(Tensor x, str group_ep, int world_size, int server_rank_size, int moe_world_size, int ep_rank_id, int moe_expert_num, int quant_mode, int batch_size, int h, int k, int expert_token_nums_type, int aiv_num) -> (Tensor, Tensor, Tensor, Tensor, Tensor)
         expand_x, dynamic_scales, expert_token_nums, recv_counts, expand_scales = torch_npu.npu_m2n_distribute_recv(x = torch.tensor([], dtype=x_type, device='npu'),
                                                                                 group_ep=self.afd_pg._get_backend(torch.device("npu")).get_hccl_comm_name(self.rank),
@@ -221,8 +287,32 @@ class M2NAFDConnector(AFDConnectorBase):
                                                                                 h=h,
                                                                                 k=k,
                                                                                 expert_token_nums_type=expert_token_nums_type,
-                                                                                server_rank_size = 2,
+                                                                                server_rank_size = 1,
                                                                                 aiv_num=aiv_num)
         
+        # token_num = expert_token_nums[-1]
+        # expand_x = expand_x[:token_num]
+        # expand_scales = expand_scales[:token_num]
+
+        # print('recv moe_expert_num!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(moe_expert_num)
+        # print('recv world_size!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(self.attn_size + self.ffn_size)
+        # print('recv moe_world_size!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(self.ffn_size)
+        # print('recv ep_rank_id!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(self.rank)
+        # print('recv recv_counts!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(recv_counts[:128])
+        # print('recv expert_token_nums!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(expert_token_nums)
+        # print('recv topk_weights!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(expand_scales)
+        # print('recv hidden_states!!!!!!!!!!!!!!!!!!!!!!\n')
+        # print(expand_x)
+        
+        # print("recv attn output handle")
+        # print(recv_counts)
+        
         # recv_counts 返程路由
-        return expand_x, dynamic_scales, expert_token_nums, recv_counts, expand_scales,afdConnectorMetadata
+        return expand_x, dynamic_scales, expert_token_nums, recv_counts, expand_scales, None
